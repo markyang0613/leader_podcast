@@ -1,0 +1,23 @@
+name: Generate Daily Podcast
+on:
+  schedule:
+    - cron: '0 21 * * *' # Runs at 6:00 AM KST (21:00 UTC)
+  workflow_dispatch: # Allows you to run it manually for testing
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run LEADER Engine
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          # Add AWS keys here later for storage
+        run: python leader_engine.py
