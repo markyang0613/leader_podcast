@@ -13,15 +13,19 @@ load_dotenv()
 
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-# Supported languages: code → { display name, JUNO voice, ALEX voice }
+# Supported languages: code → { display name, JUNO voice, ALEX voice, optional overrides }
+# llama-3.3-70b-versatile cannot generate Korean Hangul; llama-3.1-8b-instant can.
 LANGUAGES = {
     "en": {"name": "English",  "juno": "en-US-JennyNeural",    "alex": "en-US-GuyNeural"},
     "es": {"name": "Spanish",  "juno": "es-ES-ElviraNeural",   "alex": "es-ES-AlvaroNeural"},
     "ja": {"name": "Japanese", "juno": "ja-JP-NanamiNeural",   "alex": "ja-JP-KeitaNeural"},
     "zh": {"name": "Chinese",  "juno": "zh-CN-XiaoxiaoNeural", "alex": "zh-CN-YunxiNeural"},
     "fr": {"name": "French",   "juno": "fr-FR-DeniseNeural",   "alex": "fr-FR-HenriNeural"},
-    "ko": {"name": "Korean",   "juno": "ko-KR-HyunsuMultilingualNeural", "alex": "ko-KR-InJoonNeural", "gtts_lang": "ko"},
+    "ko": {"name": "Korean",   "juno": "ko-KR-HyunsuMultilingualNeural", "alex": "ko-KR-InJoonNeural",
+           "gtts_lang": "ko", "model": "llama-3.1-8b-instant"},
 }
+
+DEFAULT_MODEL = "llama-3.3-70b-versatile"
 
 
 # 1. EXTRACT: Get news from TLDR
@@ -33,7 +37,7 @@ def get_tldr_news():
 
 
 # 2. TRANSFORM: Generate dialogue script via Groq (Llama 3.3 70B)
-def generate_podcast_script(articles, language="English"):
+def generate_podcast_script(articles, language="English", model=None):
     news_context = "\n".join([f"- {a['title']}: {a['summary']}" for a in articles])
 
     prompt = f"""You are a scriptwriter for 'LEADER' (Lazy Reader), a daily tech podcast.
@@ -51,7 +55,7 @@ ALEX: <line>
 No stage directions, no intro music cues, no other characters. Start immediately with JUNO's opening line."""
 
     response = groq_client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model=model or DEFAULT_MODEL,
         messages=[{"role": "user", "content": prompt}],
         max_tokens=1024,
     )
@@ -121,8 +125,8 @@ async def _synthesize_script_gtts(script, lang_code):
             await asyncio.to_thread(tts_obj.save, tmp_path)
             with open(tmp_path, "rb") as f:
                 all_audio += f.read()
-        except (ValueError, AssertionError) as e:
-            print(f"   DEBUG gTTS skip ({text[:40]!r}): {e}")
+        except (ValueError, AssertionError):
+            pass
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
@@ -149,7 +153,7 @@ if __name__ == "__main__":
     for code, cfg in LANGUAGES.items():
         try:
             print(f"2. Generating {cfg['name']} script...")
-            script = generate_podcast_script(news, language=cfg["name"])
+            script = generate_podcast_script(news, language=cfg["name"], model=cfg.get("model"))
 
             print(f"3. Synthesizing {cfg['name']} audio...")
             try:
@@ -158,8 +162,6 @@ if __name__ == "__main__":
                 if "gtts_lang" not in cfg:
                     raise
                 print(f"   edge-tts failed ({tts_err}), using gTTS fallback...")
-                print(f"   DEBUG script[:200]: {script[:200]!r}")
-                print(f"   DEBUG hex: {script[:100].encode('unicode_escape').decode()}")
                 audio = create_podcast_audio_gtts(script, cfg["gtts_lang"])
 
             filename = f"daily_brief_{code}.mp3"
