@@ -12,8 +12,15 @@ load_dotenv()
 
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-JUNO_VOICE = os.getenv("JUNO_VOICE", "en-US-JennyNeural")   # curious student
-ALEX_VOICE = os.getenv("ALEX_VOICE", "en-US-GuyNeural")     # tech expert
+# Supported languages: code → { display name, JUNO voice, ALEX voice }
+LANGUAGES = {
+    "en": {"name": "English",  "juno": "en-US-JennyNeural",    "alex": "en-US-GuyNeural"},
+    "ko": {"name": "Korean",   "juno": "ko-KR-SunHiNeural",    "alex": "ko-KR-InJoonNeural"},
+    "es": {"name": "Spanish",  "juno": "es-ES-ElviraNeural",   "alex": "es-ES-AlvaroNeural"},
+    "ja": {"name": "Japanese", "juno": "ja-JP-NanamiNeural",   "alex": "ja-JP-KeitaNeural"},
+    "zh": {"name": "Chinese",  "juno": "zh-CN-XiaoxiaoNeural", "alex": "zh-CN-YunxiNeural"},
+    "fr": {"name": "French",   "juno": "fr-FR-DeniseNeural",   "alex": "fr-FR-HenriNeural"},
+}
 
 
 # 1. EXTRACT: Get news from TLDR
@@ -42,7 +49,6 @@ ALEX: <line>
 
 No stage directions, no intro music cues, no other characters. Start immediately with JUNO's opening line."""
 
-    print("DEBUG: Requesting script from Groq...")
     response = groq_client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": prompt}],
@@ -51,17 +57,17 @@ No stage directions, no intro music cues, no other characters. Start immediately
     return response.choices[0].message.content
 
 
-# 3. LOAD: Synthesize audio with two distinct edge-tts voices
-async def _synthesize_script(script):
+# 3. LOAD: Synthesize audio and return raw bytes
+async def _synthesize_script(script, juno_voice, alex_voice):
     lines = [l.strip() for l in script.strip().split("\n") if l.strip()]
     all_audio = b""
     tmp = tempfile.mkdtemp()
 
     for i, line in enumerate(lines):
         if line.upper().startswith("JUNO:"):
-            voice, text = JUNO_VOICE, line[5:].strip()
+            voice, text = juno_voice, line[5:].strip()
         elif line.upper().startswith("ALEX:"):
-            voice, text = ALEX_VOICE, line[5:].strip()
+            voice, text = alex_voice, line[5:].strip()
         else:
             continue
         if not text:
@@ -78,37 +84,48 @@ async def _synthesize_script(script):
     return all_audio
 
 
-def create_podcast_audio(script):
-    print("Synthesizing voice...")
-    audio = asyncio.run(_synthesize_script(script))
-    with open("daily_brief.mp3", "wb") as f:
-        f.write(audio)
-    print("Success! daily_brief.mp3 is ready.")
+def create_podcast_audio(script, juno_voice, alex_voice):
+    return asyncio.run(_synthesize_script(script, juno_voice, alex_voice))
 
 
 if __name__ == "__main__":
     print("1. Fetching news...")
     news = get_tldr_news()
 
-    print("2. Creating script (Groq / Llama 3.3 70B)...")
-    script = generate_podcast_script(news, language="English")
-    print("DEBUG: Script received.")
-
-    print("3. Synthesizing voice (edge-tts)...")
-    create_podcast_audio(script)
-    print("DEBUG: Audio file saved.")
-
-    print("4. Uploading to Cloudflare R2...")
     bucket = os.getenv("R2_BUCKET_NAME", "leader-podcast")
-    file_size = os.path.getsize("daily_brief.mp3")
-    public_url = upload_to_r2("daily_brief.mp3", bucket)
-
-    date_str = datetime.now().strftime("%B %d, %Y")
-    ep_title = f"LEADER Daily Brief - {date_str}"
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    ep_title = f"LEADER Daily Brief - {datetime.now().strftime('%B %d, %Y')}"
     ep_description = " | ".join(a["title"] for a in news)
 
-    print("5. Updating RSS feed...")
-    feed_url = update_rss_feed(bucket, public_url, ep_title, ep_description, file_size)
+    versions = {}
+    en_file_size = 0
 
-    print(f"6. Podcast is live at:  {public_url}")
-    print(f"   RSS feed:             {feed_url}")
+    for code, cfg in LANGUAGES.items():
+        print(f"2. Generating {cfg['name']} script...")
+        script = generate_podcast_script(news, language=cfg["name"])
+
+        print(f"3. Synthesizing {cfg['name']} audio...")
+        audio = create_podcast_audio(script, cfg["juno"], cfg["alex"])
+
+        filename = f"daily_brief_{code}.mp3"
+        with open(filename, "wb") as f:
+            f.write(audio)
+
+        s3_path = f"podcasts/{date_str}_tech_{code}.mp3"
+        print(f"4. Uploading {cfg['name']} to R2...")
+        public_url = upload_to_r2(filename, bucket, s3_path)
+        versions[code] = public_url
+
+        if code == "en":
+            en_file_size = os.path.getsize(filename)
+
+        os.remove(filename)
+
+    print("5. Updating RSS feed...")
+    feed_url = update_rss_feed(
+        bucket, versions["en"], ep_title, ep_description, en_file_size, versions
+    )
+
+    print(f"6. Done! English episode: {versions['en']}")
+    print(f"   RSS feed:              {feed_url}")
+    print(f"   Languages: {', '.join(versions.keys())}")

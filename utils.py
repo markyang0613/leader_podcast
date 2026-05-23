@@ -16,16 +16,17 @@ def _get_s3_client():
     )
 
 
-def upload_to_r2(file_name, bucket_name):
+def upload_to_r2(file_name, bucket_name, s3_path=None):
     s3 = _get_s3_client()
-    date_str = datetime.now().strftime("%Y-%m-%d")
-    s3_path = f"podcasts/{date_str}_tech.mp3"
+    if s3_path is None:
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        s3_path = f"podcasts/{date_str}_tech.mp3"
     s3.upload_file(file_name, bucket_name, s3_path)
     public_base = os.getenv("R2_PUBLIC_URL_BASE", "").rstrip("/")
     return f"{public_base}/{s3_path}"
 
 
-def update_rss_feed(bucket_name, episode_url, title, description, file_size):
+def update_rss_feed(bucket_name, episode_url, title, description, file_size, versions=None):
     s3 = _get_s3_client()
     public_base = os.getenv("R2_PUBLIC_URL_BASE", "").rstrip("/")
 
@@ -35,13 +36,16 @@ def update_rss_feed(bucket_name, episode_url, title, description, file_size):
     except Exception:
         episodes = []
 
-    episodes.insert(0, {
+    entry = {
         "title": title,
         "description": description,
         "url": episode_url,
         "pub_date": formatdate(),
         "file_size": file_size,
-    })
+    }
+    if versions:
+        entry["versions"] = versions
+    episodes.insert(0, entry)
 
     feed_xml = _build_rss(episodes, public_base)
 
