@@ -16,11 +16,11 @@ groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 # Supported languages: code → { display name, JUNO voice, ALEX voice }
 LANGUAGES = {
     "en": {"name": "English",  "juno": "en-US-JennyNeural",    "alex": "en-US-GuyNeural"},
-    "ko": {"name": "Korean",   "juno": "ko-KR-SunHiNeural",    "alex": "ko-KR-InJoonNeural"},
     "es": {"name": "Spanish",  "juno": "es-ES-ElviraNeural",   "alex": "es-ES-AlvaroNeural"},
     "ja": {"name": "Japanese", "juno": "ja-JP-NanamiNeural",   "alex": "ja-JP-KeitaNeural"},
     "zh": {"name": "Chinese",  "juno": "zh-CN-XiaoxiaoNeural", "alex": "zh-CN-YunxiNeural"},
     "fr": {"name": "French",   "juno": "fr-FR-DeniseNeural",   "alex": "fr-FR-HenriNeural"},
+    "ko": {"name": "Korean",   "juno": "ko-KR-SunHiNeural",    "alex": "ko-KR-InJoonNeural"},
 }
 
 
@@ -132,7 +132,7 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"   WARNING: {cfg['name']} failed ({e}), skipping.")
 
-        time.sleep(2)
+        time.sleep(5)
 
     if "en" not in versions:
         raise RuntimeError("English episode failed — cannot update feed without a primary URL.")
