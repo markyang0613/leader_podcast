@@ -4,6 +4,7 @@ import edge_tts
 import asyncio
 import os
 import tempfile
+import time
 from datetime import datetime
 from dotenv import load_dotenv
 from utils import upload_to_r2, update_rss_feed
@@ -74,7 +75,14 @@ async def _synthesize_script(script, juno_voice, alex_voice):
             continue
 
         tmp_path = os.path.join(tmp, f"{i}.mp3")
-        await edge_tts.Communicate(text, voice).save(tmp_path)
+        for attempt in range(3):
+            try:
+                await edge_tts.Communicate(text, voice).save(tmp_path)
+                break
+            except Exception:
+                if attempt == 2:
+                    raise
+                await asyncio.sleep(2 ** attempt)
 
         with open(tmp_path, "rb") as f:
             all_audio += f.read()
@@ -101,25 +109,33 @@ if __name__ == "__main__":
     en_file_size = 0
 
     for code, cfg in LANGUAGES.items():
-        print(f"2. Generating {cfg['name']} script...")
-        script = generate_podcast_script(news, language=cfg["name"])
+        try:
+            print(f"2. Generating {cfg['name']} script...")
+            script = generate_podcast_script(news, language=cfg["name"])
 
-        print(f"3. Synthesizing {cfg['name']} audio...")
-        audio = create_podcast_audio(script, cfg["juno"], cfg["alex"])
+            print(f"3. Synthesizing {cfg['name']} audio...")
+            audio = create_podcast_audio(script, cfg["juno"], cfg["alex"])
 
-        filename = f"daily_brief_{code}.mp3"
-        with open(filename, "wb") as f:
-            f.write(audio)
+            filename = f"daily_brief_{code}.mp3"
+            with open(filename, "wb") as f:
+                f.write(audio)
 
-        s3_path = f"podcasts/{date_str}_tech_{code}.mp3"
-        print(f"4. Uploading {cfg['name']} to R2...")
-        public_url = upload_to_r2(filename, bucket, s3_path)
-        versions[code] = public_url
+            s3_path = f"podcasts/{date_str}_tech_{code}.mp3"
+            print(f"4. Uploading {cfg['name']} to R2...")
+            public_url = upload_to_r2(filename, bucket, s3_path)
+            versions[code] = public_url
 
-        if code == "en":
-            en_file_size = os.path.getsize(filename)
+            if code == "en":
+                en_file_size = os.path.getsize(filename)
 
-        os.remove(filename)
+            os.remove(filename)
+        except Exception as e:
+            print(f"   WARNING: {cfg['name']} failed ({e}), skipping.")
+
+        time.sleep(2)
+
+    if "en" not in versions:
+        raise RuntimeError("English episode failed — cannot update feed without a primary URL.")
 
     print("5. Updating RSS feed...")
     feed_url = update_rss_feed(
