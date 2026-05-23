@@ -117,7 +117,12 @@ async def _synthesize_script_gtts(script, lang_code):
 
         tmp_path = tempfile.mktemp(suffix=".mp3")
         try:
-            await asyncio.to_thread(gTTS(text, lang=lang_code).save, tmp_path)
+            tts_obj = gTTS(text, lang=lang_code)
+        except ValueError as e:
+            print(f"   DEBUG gTTS skip (bad text {text!r:.60}): {e}")
+            continue
+        try:
+            await asyncio.to_thread(tts_obj.save, tmp_path)
             with open(tmp_path, "rb") as f:
                 all_audio += f.read()
         finally:
@@ -155,6 +160,7 @@ if __name__ == "__main__":
                 if "gtts_lang" not in cfg:
                     raise
                 print(f"   edge-tts failed ({tts_err}), using gTTS fallback...")
+                print(f"   DEBUG script[:200]: {script[:200]!r}")
                 audio = create_podcast_audio_gtts(script, cfg["gtts_lang"])
 
             filename = f"daily_brief_{code}.mp3"
