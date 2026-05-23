@@ -20,7 +20,7 @@ LANGUAGES = {
     "ja": {"name": "Japanese", "juno": "ja-JP-NanamiNeural",   "alex": "ja-JP-KeitaNeural"},
     "zh": {"name": "Chinese",  "juno": "zh-CN-XiaoxiaoNeural", "alex": "zh-CN-YunxiNeural"},
     "fr": {"name": "French",   "juno": "fr-FR-DeniseNeural",   "alex": "fr-FR-HenriNeural"},
-    "ko": {"name": "Korean",   "juno": "ko-KR-SunHiNeural",    "alex": "ko-KR-InJoonNeural"},
+    "ko": {"name": "Korean",   "juno": "ko-KR-HyunsuMultilingualNeural", "alex": "ko-KR-InJoonNeural"},
 }
 
 
