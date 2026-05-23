@@ -14,7 +14,7 @@ jobs:
         with:
           python-version: '3.10'
       - name: Install dependencies
-        run: pip install feedparser groq edge-tts boto3 python-dotenv
+        run: pip install feedparser groq edge-tts boto3 python-dotenv gtts
       - name: Run LEADER Engine
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}

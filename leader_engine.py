@@ -20,7 +20,7 @@ LANGUAGES = {
     "ja": {"name": "Japanese", "juno": "ja-JP-NanamiNeural",   "alex": "ja-JP-KeitaNeural"},
     "zh": {"name": "Chinese",  "juno": "zh-CN-XiaoxiaoNeural", "alex": "zh-CN-YunxiNeural"},
     "fr": {"name": "French",   "juno": "fr-FR-DeniseNeural",   "alex": "fr-FR-HenriNeural"},
-    "ko": {"name": "Korean",   "juno": "ko-KR-HyunsuMultilingualNeural", "alex": "ko-KR-InJoonNeural"},
+    "ko": {"name": "Korean",   "juno": "ko-KR-HyunsuMultilingualNeural", "alex": "ko-KR-InJoonNeural", "gtts_lang": "ko"},
 }
 
 
@@ -96,6 +96,41 @@ def create_podcast_audio(script, juno_voice, alex_voice):
     return asyncio.run(_synthesize_script(script, juno_voice, alex_voice))
 
 
+# gTTS fallback: used when edge-tts is blocked (e.g. Korean voices on GitHub Actions IPs).
+# Both JUNO and ALEX lines get a single Google TTS voice — no voice distinction,
+# but the Korean audio is still fully usable.
+async def _synthesize_script_gtts(script, lang_code):
+    from gtts import gTTS
+
+    lines = [l.strip() for l in script.strip().split("\n") if l.strip()]
+    all_audio = b""
+
+    for line in lines:
+        if line.upper().startswith("JUNO:"):
+            text = line[5:].strip()
+        elif line.upper().startswith("ALEX:"):
+            text = line[5:].strip()
+        else:
+            continue
+        if not text:
+            continue
+
+        tmp_path = tempfile.mktemp(suffix=".mp3")
+        try:
+            await asyncio.to_thread(gTTS(text, lang=lang_code).save, tmp_path)
+            with open(tmp_path, "rb") as f:
+                all_audio += f.read()
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+    return all_audio
+
+
+def create_podcast_audio_gtts(script, lang_code):
+    return asyncio.run(_synthesize_script_gtts(script, lang_code))
+
+
 if __name__ == "__main__":
     print("1. Fetching news...")
     news = get_tldr_news()
@@ -114,7 +149,13 @@ if __name__ == "__main__":
             script = generate_podcast_script(news, language=cfg["name"])
 
             print(f"3. Synthesizing {cfg['name']} audio...")
-            audio = create_podcast_audio(script, cfg["juno"], cfg["alex"])
+            try:
+                audio = create_podcast_audio(script, cfg["juno"], cfg["alex"])
+            except Exception as tts_err:
+                if "gtts_lang" not in cfg:
+                    raise
+                print(f"   edge-tts failed ({tts_err}), using gTTS fallback...")
+                audio = create_podcast_audio_gtts(script, cfg["gtts_lang"])
 
             filename = f"daily_brief_{code}.mp3"
             with open(filename, "wb") as f:
